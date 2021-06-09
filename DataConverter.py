@@ -29,10 +29,13 @@ class DataConverter(SequenceConverter, BatchLoader, SaveLMDB, hdf5Loader):
         self._dataset = self._get_dataset(data)
         self._n_data_points = data["collision_energy_aligned_normed"].shape[0]
         self._out_dir = out_dir
-
-        assert self.isDir(self._out_dir), f"{self._out_dir} don't exist!"
-
+        
+        if self.isDir(self._out_dir):
+            self.createDir(self._out_dir)
+        
         self._out_path = self.out_path(self._data_type, self._split)
+
+        print(f"Save lmbd file at {self._out_path}")
         
     def _keys_exists(self, data: HDF5Matrix)->bool:
         """ Check if all necessary keys in hdf5 file exists """
