@@ -7,6 +7,8 @@ import shutil
 from tqdm import tqdm
 import os 
 from typing import Union, Tuple, Dict
+from pathlib import Path
+
 
 class hdf5Loader:
     """ Load hdf5 file """
@@ -70,7 +72,7 @@ class BatchLoader:
                 end = n
             yield start, end
 
-class DirHandler:
+class PathHandler:
     """ Handled dir for data """
     def deleteDir(self, rt_path: str)->None:
         """ Delete dir """
@@ -94,16 +96,21 @@ class DirHandler:
     def isDir(path: str)->bool:
         """ Check if dir exists """
         return os.path.isdir(path) 
+
+    @staticmethod
+    def isFile(path: str)->bool:
+        """ Check if file exists """
+        return Path(path).is_file()
     
     @staticmethod
     def createDir(path: str)->None:
         """ Create dir """
         os.mkdir(path)
     
-class SaveLMDB(DirHandler):
+class SaveLMDB(PathHandler):
     """ Save datapoint to LMDB file """
     def __init__(self):
-        DirHandler.__init__(self)
+        PathHandler.__init__(self)
 
     @staticmethod
     def save(rt_path: str, data: dict, key: str)->None:
