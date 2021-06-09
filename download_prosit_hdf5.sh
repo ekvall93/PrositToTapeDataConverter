@@ -12,7 +12,7 @@ if [ -d "./hdf5/cid" ]
 then
     echo "hdf5/cid directory already exists"
 else
-    echo "Creating hdf5 directory"
+    echo "Creating hdf5/cid directory"
     mkdir "./hdf5/cid"
 fi
 
@@ -20,7 +20,7 @@ if [ -d "./hdf5/hcd" ]
 then
     echo "hdf5/hcd directory already exists"
 else
-    echo "Creating hdf5 directory"
+    echo "Creating hdf5/hcd directory"
     mkdir "./hdf5/hcd"
 fi
 
