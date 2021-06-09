@@ -14,7 +14,7 @@ if __name__ == "__main__":
             print(f"Start to convert hdf5 to lmdb for datatype {datatype}, split {split}. \n")
             print(f"Saved at {path}")
 
-            DC = DataConverter.convertFromPath(split, datatype, path, "/sdd/prositData/LMDB")
+            DC = DataConverter.convertFromPath(split, datatype, path, "./LMDB")
             DC.convert()
 
 
