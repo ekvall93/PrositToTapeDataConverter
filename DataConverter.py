@@ -30,7 +30,7 @@ class DataConverter(SequenceConverter, BatchLoader, SaveLMDB, hdf5Loader):
         self._n_data_points = data["collision_energy_aligned_normed"].shape[0]
         self._out_dir = out_dir
         
-        if self.isDir(self._out_dir):
+        if not self.isDir(self._out_dir):
             self.createDir(self._out_dir)
         
         self._out_path = self.out_path(self._data_type, self._split)
