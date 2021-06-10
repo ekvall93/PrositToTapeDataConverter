@@ -2,7 +2,7 @@ from DataConverter import DataConverter
 from utils import PathHandler
 if __name__ == "__main__":
     dataTypes = ["cid", "hcd"]
-    dataSplits = ["ho", "train", "val"]
+    dataSplits = ["ho", "train", "valid"]
 
     for datatype in dataTypes:
         for split in dataSplits:
