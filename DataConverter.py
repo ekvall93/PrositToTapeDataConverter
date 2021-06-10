@@ -79,10 +79,10 @@ class DataConverter(SequenceConverter, BatchLoader, SaveLMDB, hdf5Loader):
 
     def out_path(self, data_type:str, split:str)->str:
         """ Get out path """
-        o = self._out_dir + f"/prosit_msms_{data_type}"
+        o = self._out_dir + f"/prosit_fragmentation_{data_type}"
         if not self.isDir(o):
             self.createDir(o)
-        return o + f"/prosit_msms_{data_type}_{split}.lmdb"
+        return o + f"/prosit_fragmentation_{data_type}_{split}.lmdb"
 
     def setDataType(self, k:str, v:np.array)->Union[str, np.array]:
         """ Set type for datapoint in LMBD """
