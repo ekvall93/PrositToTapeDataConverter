@@ -16,18 +16,34 @@ class DataConverter(SequenceConverter, BatchLoader, SaveLMDB, hdf5Loader):
         SequenceConverter.__init__(self)
         BatchLoader.__init__(self)
         SaveLMDB.__init__(self)
-        self._keys = [
+        self._specialKeys = [
             "sequence_integer",
             "collision_energy_aligned_normed",
             "precursor_charge_onehot",
             "intensities_raw"
             ]
+        #Exclude 'spectral_angle' and 'intensities_pred'
+        self._allkeys = [
+            'collision_energy',
+            'collision_energy_aligned_normed',
+            'collision_energy_normed',
+            'intensities_raw',
+            'masses_raw',
+            'method',
+            'precursor_charge_onehot',
+            'rawfile',
+            'reverse',
+            'scan_number',
+            'score',
+            'sequence_integer'
+            ]
+
         assert self._keys_exists(data), "The dataset is not complete"
 
         self._split = split
         self._data_type = data_type
         self._dataset = self._get_dataset(data)
-        self._n_data_points = data["collision_energy_aligned_normed"].shape[0]
+        self._n_data_points = data["collision_energy_aligned_normed"].shape[0]        
         self._out_dir = out_dir
         
         if not self.isDir(self._out_dir):
@@ -40,11 +56,11 @@ class DataConverter(SequenceConverter, BatchLoader, SaveLMDB, hdf5Loader):
     def _keys_exists(self, data: HDF5Matrix)->bool:
         """ Check if all necessary keys in hdf5 file exists """
         keys = list(data.keys())
-        return all([k in keys for k in self._keys])
+        return all([k in keys for k in self._allkeys])
 
     def _get_dataset(self, data: Dict[str, HDF5Matrix])->dict:
         """ Extract necessary data columns """
-        return { k : data[k] for k in self._keys }
+        return { k : data[k] for k in self._allkeys }
 
     @property
     def split(self)->str:
@@ -82,27 +98,38 @@ class DataConverter(SequenceConverter, BatchLoader, SaveLMDB, hdf5Loader):
         o = self._out_dir + f"/prosit_fragmentation_{data_type}"
         if not self.isDir(o):
             self.createDir(o)
+        if split == "ho":
+            _split = "test"    
+        _split = split
         return o + f"/prosit_fragmentation_{data_type}_{split}.lmdb"
 
     def setDataType(self, k:str, v:np.array)->Union[str, np.array]:
         """ Set type for datapoint in LMBD """
-        if k == "sequence_integer":
-            return self.intToPeptide(v)
+        if k == "collision_energy":
+            return np.array(v, dtype=np.float32)
+        if k == "collision_energy_normed":
+            return np.array(v, dtype=np.float32)
         if k == "collision_energy_aligned_normed":
             return np.array(v, dtype=np.float32)
         if k == "precursor_charge_onehot":
             return np.array(v, dtype=np.uint8)
         if k == "intensities_raw":
             return np.array(v, dtype=np.float32)
-
+        if k == "masses_raw":
+            return np.array(v, dtype=np.float32)
+        else:
+            return v
+       
     def convert(self, batch_size:int = 100_000)->None:
         """ Convert hdf5 to LMDB """
         self.deleteDir(self._out_path)
         self.createLMDBdir(self._out_path, self._n_data_points)
 
         for c, (start, end) in enumerate(self.getBatchIxs(self._n_data_points, batch_size)):
-            batches = {k: self._dataset[k][start:end] for k in self._keys}
+            batches = {k: self._dataset[k][start:end] for k in self._allkeys}
 
             for ix, key in enumerate(tqdm(range(start, end))):
-                d = {k: self.setDataType(k, v[ix]) for k, v in batches.items()}
+                d = { k : self.setDataType(k, v[ix]) for k, v in batches.items()}
+                d["peptide_sequence"] = self.intToPeptide(batches["sequence_integer"][ix])
                 self.save(self._out_path, d, key)
+         
