@@ -16,26 +16,11 @@ class DataConverter(SequenceConverter, BatchLoader, SaveLMDB, hdf5Loader):
         SequenceConverter.__init__(self)
         BatchLoader.__init__(self)
         SaveLMDB.__init__(self)
-        self._specialKeys = [
+        self._keys = [
             "sequence_integer",
             "collision_energy_aligned_normed",
             "precursor_charge_onehot",
             "intensities_raw"
-            ]
-        #Exclude 'spectral_angle' and 'intensities_pred'
-        self._allkeys = [
-            'collision_energy',
-            'collision_energy_aligned_normed',
-            'collision_energy_normed',
-            'intensities_raw',
-            'masses_raw',
-            'method',
-            'precursor_charge_onehot',
-            'rawfile',
-            'reverse',
-            'scan_number',
-            'score',
-            'sequence_integer'
             ]
 
         assert self._keys_exists(data), "The dataset is not complete"
@@ -56,11 +41,11 @@ class DataConverter(SequenceConverter, BatchLoader, SaveLMDB, hdf5Loader):
     def _keys_exists(self, data: HDF5Matrix)->bool:
         """ Check if all necessary keys in hdf5 file exists """
         keys = list(data.keys())
-        return all([k in keys for k in self._allkeys])
+        return all([k in keys for k in self._keys])
 
     def _get_dataset(self, data: Dict[str, HDF5Matrix])->dict:
         """ Extract necessary data columns """
-        return { k : data[k] for k in self._allkeys }
+        return { k : data[k] for k in self._keys }
 
     @property
     def split(self)->str:
@@ -105,10 +90,6 @@ class DataConverter(SequenceConverter, BatchLoader, SaveLMDB, hdf5Loader):
 
     def setDataType(self, k:str, v:np.array)->Union[str, np.array]:
         """ Set type for datapoint in LMBD """
-        if k == "collision_energy":
-            return np.array(v, dtype=np.float32)
-        if k == "collision_energy_normed":
-            return np.array(v, dtype=np.float32)
         if k == "collision_energy_aligned_normed":
             return np.array(v, dtype=np.float32)
         if k == "precursor_charge_onehot":
@@ -117,7 +98,7 @@ class DataConverter(SequenceConverter, BatchLoader, SaveLMDB, hdf5Loader):
             return np.array(v, dtype=np.float32)
         if k == "masses_raw":
             return np.array(v, dtype=np.float32)
-        else:
+        if k == "sequence_integer":
             return v
        
     def convert(self, batch_size:int = 100_000)->None:
@@ -126,10 +107,12 @@ class DataConverter(SequenceConverter, BatchLoader, SaveLMDB, hdf5Loader):
         self.createLMDBdir(self._out_path, self._n_data_points)
 
         for c, (start, end) in enumerate(self.getBatchIxs(self._n_data_points, batch_size)):
-            batches = {k: self._dataset[k][start:end] for k in self._allkeys}
+            batches = {k: self._dataset[k][start:end] for k in self._keys}
 
             for ix, key in enumerate(tqdm(range(start, end))):
                 d = { k : self.setDataType(k, v[ix]) for k, v in batches.items()}
                 d["peptide_sequence"] = self.intToPeptide(batches["sequence_integer"][ix])
+                #We don't need this for Tape anymore
+                del d["sequence_integer"]
                 self.save(self._out_path, d, key)
          
