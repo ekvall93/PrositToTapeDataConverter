@@ -6,10 +6,11 @@ import numpy as np
 import shutil
 from tqdm import tqdm
 import os 
-from typing import Union, Tuple, Dict
+from typing import Union, Tuple, Dict, List
 from pathlib import Path
-
-
+import functools
+from typing import Sequence
+from sklearn.preprocessing import normalize
 
 class hdf5Loader:
     """ Load hdf5 file """
@@ -23,6 +24,14 @@ class hdf5Loader:
         for dataset in dataset_list:
             data[dataset] = HDF5Matrix(path, dataset, start=0, end=n_samples, normalizer=None)
         return data
+
+    @staticmethod
+    def to_hdf5(dictionary, path):
+        with h5py.File(path, "w") as f:
+            for key, data in dictionary.items():
+                f.create_dataset(key, data=data, dtype=data.dtype, compression="gzip")
+
+    
 
 class SequenceConverter:
     """ Convert Prosit integer peptide sequence to Tape peptide sequence """
@@ -82,6 +91,9 @@ class PathHandler:
                 shutil.rmtree(rt_path)
             except Exception as e:
                 print(e)
+    def deleteFile(self, path: str)->None:
+        if os.path.isfile(path):
+            os.remove(path)
 
     @staticmethod
     def createLMDBdir(rt_path:str, n_data_points: int)->None:
@@ -121,3 +133,142 @@ class SaveLMDB(PathHandler):
             key = str(key)
             txn.put(key.encode("ascii"), pkl.dumps(data))
         env.close()
+
+class cleanTapeOutput:
+    """Clean up Tape intensity prediction and compute spectral angle"""
+    @staticmethod
+    def normalize_base_peak(array: np.array)->np.array:
+        """Normalize intensity peaks"""
+        maxima = array.max(axis=1)
+        array = array / maxima[:, np.newaxis]
+        return array
+    
+    @staticmethod
+    def mask_outofrange(array:np.array, lengths:np.array, mask:int=-1.0)->np.array:
+        """Set fragments out-of-range to -1"""
+        for i in range(array.shape[0]):
+            array[i, lengths[i] - 1 :, :, :, :] = mask
+        return array
+    
+    @staticmethod
+    def reshape_dims(array: np.array)->np.array:
+        """Reshape intensities"""
+        MAX_SEQUENCE = 30
+        ION_TYPES = ["y", "b"]
+        MAX_FRAG_CHARGE = 3
+
+        n, dims = array.shape
+        assert dims == 174
+        nlosses = 1
+        return array.reshape(
+            [array.shape[0], MAX_SEQUENCE - 1, len(ION_TYPES), nlosses, MAX_FRAG_CHARGE]
+        )
+    
+    @staticmethod
+    def mask_outofcharge(array: np.array, charges: np.array, mask: int=-1.0)->np.array:
+        """Set entries that cannot exist to -1"""
+        for i in range(array.shape[0]):
+            if charges[i] < 3:
+                array[i, :, :, :, charges[i] :] = mask
+        return array
+    
+    @staticmethod
+    def reshape_flat(array: np.array)->np.array:
+        """Reshape intensities"""
+        s = array.shape
+        flat_dim = [s[0], functools.reduce(lambda x, y: x * y, s[1:], 1)]
+        return array.reshape(flat_dim)
+
+    @staticmethod
+    def masked_spectral_distance(true:np.array, pred:np.array, epsilon:float = 1e-7):
+        """Compute spectral angle"""
+        pred_masked = ((true + 1) * pred) / (true + 1 + epsilon)
+        true_masked = ((true + 1) * true) / (true + 1 + epsilon)
+
+        pred_norm = normalize(pred_masked)
+        true_norm = normalize(true_masked)
+        product = np.sum(pred_norm * true_norm, axis=1)
+        arccos = np.arccos(product)
+        spectral_distance = 2 * arccos / np.pi
+        return spectral_distance
+    
+    def getIntensitiesAndSpectralAngle(self, prediction: np.array, target: np.array, charge: np.array, sequence: np.array)->Tuple[np.array, np.array]:
+        """Clean intensities and compute spectral angle"""
+        sequence_lengths = [np.count_nonzero(s) for s in sequence]
+
+        intensities = np.asarray(prediction)
+        intensities_raw = np.asarray(target)
+        charge = np.array(charge)
+        charges = list(charge.argmax(axis=1) + 1)
+
+        intensities[intensities < 0] = 0
+        intensities = self.normalize_base_peak(intensities)
+        intensities = self.reshape_dims(intensities)
+        intensities = self.mask_outofrange(intensities, sequence_lengths)
+        intensities = self.mask_outofcharge(intensities, charges)
+        intensities = self.reshape_flat(intensities)
+
+        spectral_angle = 1 - self.masked_spectral_distance(intensities_raw, intensities)
+        spectral_angle = np.nan_to_num(spectral_angle)
+        return spectral_angle, intensities
+
+
+class PrepareTapeData(cleanTapeOutput, BatchLoader):
+    """Prepate Tape HDF5-data by using Tape output and add meta-data from Prosit HDF5"""
+    def __init__(self, prosit_hdf5_data: HDF5Matrix, tape_result: dict)->None:
+        cleanTapeOutput.__init__(self)
+        BatchLoader.__init__(self)
+        
+        self.prosit_hdf5_data = prosit_hdf5_data
+        self.tape_result = tape_result
+        
+        self.prosit_keys_keep = list(set(prosit_hdf5_data.keys()) - set(['intensities_pred', 'spectral_angle']))
+        self._keys = list(prosit_hdf5_data.keys())
+        
+        self._n_data_points, self.batch_size = len(tape_result[1]), 100_000
+        self.tape_data_hdf5 = {k:list() for k in self._keys}
+        
+    def getTapeIntensities(self, tape_batch:dict)->Tuple[List[np.array], List[np.array]]:
+        """Get Tape intensities from batch"""
+        tape_pred_intensities = [tape_batch[i]["prediction"] for i in range(len(tape_batch))]
+        tape_target_intensities = [tape_batch[i]["target"] for i in range(len(tape_batch))]
+        return tape_pred_intensities, tape_target_intensities
+    
+    def addTapeHDF5Data(self, prosit_batch: dict, cleanInt:np.array, sa:np.array)->None:
+        """Add batch data"""
+        for k in self.prosit_keys_keep:
+            self.tape_data_hdf5[k].append(prosit_batch[k])
+        self.tape_data_hdf5['intensities_pred'].append(cleanInt)
+        self.tape_data_hdf5['spectral_angle'].append(sa)
+    
+    def concatenateTapeHDF5Data(self)->None:
+        """Concatenate all batch-metadata to one final dataset"""
+        tmp_data = dict()
+        for k in self._keys:
+            tmp_data[k] = np.concatenate(self.tape_data_hdf5[k])
+        self.tape_data_hdf5 = tmp_data
+        
+             
+    def createTapeHDF5Dict(self):
+        tape_data_hdf5 = {k:list() for k in self._keys}
+        for c, (start, end) in enumerate(self.getBatchIxs(self._n_data_points, self.batch_size)):
+            prosit_batch = {k: self.prosit_hdf5_data[k][start:end] for k in self._keys}
+            
+
+            tape_batch = self.tape_result[1][start:end]
+            tape_pred_intensities, tape_target_intensities = self.getTapeIntensities(tape_batch)
+
+            sa, cleanInt = self.getIntensitiesAndSpectralAngle(tape_pred_intensities, 
+                                                               tape_target_intensities, 
+                                                               prosit_batch["precursor_charge_onehot"], 
+                                                               prosit_batch["sequence_integer"]
+                                                              )
+            
+            #Assure that indexing is correct in TapeResult and PrositHDF5
+            assert np.allclose(np.asarray(tape_target_intensities), prosit_batch["intensities_raw"]), "Target is not the same"
+            
+            self.addTapeHDF5Data(prosit_batch, cleanInt, sa)
+
+        self.concatenateTapeHDF5Data()
+        print("Tape Median Spectrum Angle {}".format(np.median(self.tape_data_hdf5['spectral_angle'])))
+        return self.tape_data_hdf5

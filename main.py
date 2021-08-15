@@ -1,8 +1,11 @@
-from DataConverter import DataConverter
+from PrositHDF5toTapeLMDB import PrositHDF5toTapeLMDB
 from utils import PathHandler
 if __name__ == "__main__":
-    dataTypes = ["cid", "hcd"]
-    dataSplits = ["ho", "train", "valid"]
+    #dataTypes = ["cid", "hcd"]
+    #dataSplits = ["ho", "train", "valid"]
+    dataTypes = ["hcd"]
+    dataSplits = ["ho", "valid"]
+    #dataSplits = ["ho"]
 
     for datatype in dataTypes:
         for split in dataSplits:
@@ -14,7 +17,7 @@ if __name__ == "__main__":
             print(f"Start to convert hdf5 to lmdb for datatype {datatype}, split {split}. \n")
             print(f"Saved at {path}")
 
-            DC = DataConverter.convertFromPath(split, datatype, path, "./LMDB")
+            DC = PrositHDF5toTapeLMDB.convertFromPath(split, datatype, path, "./LMDB")
             DC.convert()
 
 

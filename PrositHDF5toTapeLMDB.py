@@ -8,9 +8,9 @@ from typing import TypeVar, Type, Union, Dict
 from utils import SequenceConverter, BatchLoader, SaveLMDB, hdf5Loader
 
 
-T = TypeVar('T', bound='DataConverter')
+T = TypeVar('T', bound='PrositHDF5toTapeLMDB')
 
-class DataConverter(SequenceConverter, BatchLoader, SaveLMDB, hdf5Loader):
+class PrositHDF5toTapeLMDB(SequenceConverter, BatchLoader, SaveLMDB, hdf5Loader):
     """ Prosi-to-Tape data converter"""
     def __init__(self, split: str, data_type: str, data: HDF5Matrix, out_dir: str)->None:
         SequenceConverter.__init__(self)
